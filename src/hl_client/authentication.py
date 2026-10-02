@@ -34,6 +34,23 @@ class BaseStage(ABC):
     def build_fields(self) -> dict[str, str]:
         """Build the form fields for this stage."""
 
+    @staticmethod
+    def _rejection_reason(response) -> str | None:
+        """Best-effort extraction of whatever error/validation message HL
+        rendered on the page we landed on instead of redirecting, e.g. "that
+        username and date of birth don't match" vs. an account lockout
+        notice - the two look identical as a bare redirect-path mismatch."""
+        soup = BeautifulSoup(response.content, "lxml")
+        for tag in soup.find_all(class_=True):
+            if tag.find_parent("noscript"):
+                continue
+            classes = " ".join(tag.get("class") or [])
+            if any(keyword in classes for keyword in ("error", "alert", "notification", "validation")):
+                text = tag.get_text(" ", strip=True)
+                if text:
+                    return text[:300]
+        return None
+
     def submit(self) -> None:
         fields = self.build_fields()
         fields["hl_vt"] = self.get_verification_token()
@@ -42,9 +59,11 @@ class BaseStage(ABC):
 
         # A successful stage redirects to the next page.
         if response.url.path != f"/{self.expected_response}":
+            reason = self._rejection_reason(response)
+            detail = f" - page said: {reason!r}" if reason else ""
             raise AuthenticationError(
                 f"Unable to submit Stage: expected to land on /{self.expected_response}, "
-                f"got {response.status_code} {response.url.path}"
+                f"got {response.status_code} {response.url.path}{detail}"
             )
 
     def run(self) -> None:
