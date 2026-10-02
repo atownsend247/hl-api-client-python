@@ -42,7 +42,10 @@ class BaseStage(ABC):
 
         # A successful stage redirects to the next page.
         if response.url.path != f"/{self.expected_response}":
-            raise AuthenticationError("Unable to submit Stage")
+            raise AuthenticationError(
+                f"Unable to submit Stage: expected to land on /{self.expected_response}, "
+                f"got {response.status_code} {response.url.path}"
+            )
 
     def run(self) -> None:
         self.load_page()
